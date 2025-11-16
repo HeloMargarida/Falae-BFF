@@ -38,11 +38,16 @@ public class UsuariosBffController {
     }
 
     @PostMapping
-    public Mono<ResponseEntity<Object>> create(
-            @RequestBody UsuarioInput input,
-            @RequestHeader(value = "Authorization", required = false) String auth) {
-        return backend.post("/api/Usuarios", auth, input, Object.class).map(ResponseEntity::ok);
-    }
+public Mono<ResponseEntity<Object>> create(
+        @RequestBody UsuarioInput input,
+        @RequestHeader(value = "Authorization", required = false) String auth) {
+    return backend.post("/api/Usuarios", auth, input, Object.class)
+            .doOnError(error -> {
+                System.err.println("❌ Erro ao criar usuário no Backend: " + error.getMessage());
+                error.printStackTrace();
+            })
+            .map(ResponseEntity::ok);
+}
 
     @PutMapping("/{id}")
     public Mono<ResponseEntity<Void>> update(
