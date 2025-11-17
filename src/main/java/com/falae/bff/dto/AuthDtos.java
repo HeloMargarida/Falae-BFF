@@ -6,40 +6,40 @@ public class AuthDtos {
 
     public static class LoginRequest {
 
-        @JsonProperty("Email")
-        private String Email;
+        @JsonProperty("email")
+        private String email;
 
-        @JsonProperty("Senha")
-        private String Senha;
+        @JsonProperty("senha")
+        private String senha;
 
         public String getEmail() {
-            return Email;
+            return email;
         }
 
         public void setEmail(String email) {
-            this.Email = email;
+            this.email = email;
         }
 
         public String getSenha() {
-            return Senha;
+            return senha;
         }
 
         public void setSenha(String senha) {
-            this.Senha = senha;
+            this.senha = senha;
         }
     }
 
     public static class RecuperarSenhaRequest {
 
-        @JsonProperty("Email")
-        private String Email;
+        @JsonProperty("email")
+        private String email;
 
         public String getEmail() {
-            return Email;
+            return email;
         }
 
         public void setEmail(String email) {
-            this.Email = email;
+            this.email = email;
         }
     }
 }

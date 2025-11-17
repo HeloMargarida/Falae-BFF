@@ -20,11 +20,9 @@ public class AuthBffController {
 
     @PostMapping("/login")
     public ResponseEntity<Object> login(@RequestBody LoginRequest req) {
-        // Em MVC usamos .block() para obter a resposta do WebClient
         Object body = backend.post("/api/auth/login", "", req, Object.class).block();
         return ResponseEntity.ok(body);
     }
-    
 
     @PostMapping("/recuperar-senha")
     public ResponseEntity<Object> recuperar(@RequestBody RecuperarSenhaRequest req) {

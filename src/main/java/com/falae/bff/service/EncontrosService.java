@@ -1,9 +1,12 @@
 package com.falae.bff.service;
 
+import java.util.Map;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import com.falae.bff.dto.EncontrosDtos.EncontroInput;
+import com.falae.bff.dto.EncontrosDtos.EncontroOutput;
 import com.falae.bff.dto.EncontrosDtos.MatchingInput;
 
 import reactor.core.publisher.Mono;
@@ -14,47 +17,129 @@ public class EncontrosService {
     @Autowired
     private BackendService backend;
 
-    public Mono<Object> listar(String auth) {
-        return backend.get("/api/Encontros", auth, Object.class);
+    private static final String BASE = "/api/Encontros";
+
+    // ============================================================
+    // LISTAR TODOS
+    // ============================================================
+    public Mono<Object> listar(String authHeader) {
+        return backend.get(BASE, authHeader, EncontroOutput[].class)
+                .cast(Object.class)
+                .onErrorResume(e -> Mono.just((Object) error("Erro ao listar contatos", e)));
     }
 
-    public Mono<Object> obter(String id, String auth) {
-        return backend.get("/api/Encontros/" + id, auth, Object.class);
+    // ============================================================
+    // OBTER POR ID
+    // ============================================================
+    public Mono<Object> obter(String id, String authHeader) {
+        return backend.get(BASE + "/" + id, authHeader, EncontroOutput.class)
+                .cast(Object.class)
+                .onErrorResume(e -> Mono.just((Object) error("Erro ao obter encontro", e)));
     }
 
-    public Mono<Object> criar(EncontroInput input, String auth) {
-        return backend.post("/api/Encontros", auth, input, Object.class);
+    // ============================================================
+    // CRIAR ENCONTRO
+    // ============================================================
+    public Mono<Object> criar(EncontroInput input, String authHeader) {
+
+        if (input == null) {
+            return Mono.just((Object) error("O corpo da requisição não pode ser nulo", null));
+        }
+
+        if (input.localId == null || input.localId.isBlank()) {
+            return Mono.just((Object) error("localId é obrigatório", null));
+        }
+
+        return backend.post(BASE, authHeader, input, Object.class)
+                .cast(Object.class)
+                .onErrorResume(e -> Mono.just((Object) error("Erro ao criar encontro", e)));
     }
 
-    public Mono<Object> atualizar(String id, EncontroInput input, String auth) {
-        return backend.put("/api/Encontros/" + id, auth, input)
-                .thenReturn("Encontro atualizado");
+    // ============================================================
+    // ATUALIZAR ENCONTRO
+    // ============================================================
+    public Mono<Object> atualizar(String id, EncontroInput input, String authHeader) {
+        return backend.put(BASE + "/" + id, authHeader, input)
+                .then(Mono.just((Object) ok("Encontro atualizado com sucesso")))
+                .onErrorResume(e -> Mono.just((Object) error("Erro ao atualizar encontro", e)));
     }
 
-    public Mono<Object> deletar(String id, String auth) {
-        return backend.delete("/api/Encontros/" + id, auth)
-                .thenReturn("Encontro removido");
+    // ============================================================
+    // DELETAR ENCONTRO
+    // ============================================================
+    public Mono<Object> deletar(String id, String authHeader) {
+        return backend.delete(BASE + "/" + id, authHeader)
+                .then(Mono.just((Object) ok("Encontro removido com sucesso")))
+                .onErrorResume(e -> Mono.just((Object) error("Erro ao remover encontro", e)));
     }
 
-    public Mono<Object> matching(MatchingInput input, String auth) {
-        return backend.post("/api/Encontros/matching", auth, input, Object.class);
+    // ============================================================
+    // MATCHING
+    // ============================================================
+    public Mono<Object> matching(MatchingInput input, String authHeader) {
+        return backend.post(BASE + "/matching", authHeader, input, Object.class)
+                .cast(Object.class)
+                .onErrorResume(e -> Mono.just((Object) error("Erro ao realizar matching", e)));
     }
 
-    public Mono<Object> atualizarStatus(String id, String status, String auth) {
-        return backend.put("/api/Encontros/" + id + "/status?status=" + status, auth, null)
-                .thenReturn("Status atualizado");
+    // ============================================================
+    // ATUALIZAR STATUS
+    // ============================================================
+    public Mono<Object> atualizarStatus(String id, String status, String authHeader) {
+        String url = BASE + "/" + id + "/status?status=" + status;
+
+        return backend.put(url, authHeader, null)
+                .then(Mono.just((Object) ok("Status atualizado com sucesso")))
+                .onErrorResume(e -> Mono.just((Object) error("Erro ao atualizar status", e)));
     }
 
-    public Mono<Object> buscarPorStatus(String status, String auth) {
-        return backend.get("/api/Encontros/status/" + status, auth, Object.class);
+    // ============================================================
+    // BUSCAR POR STATUS
+    // ============================================================
+    public Mono<Object> buscarPorStatus(String status, String authHeader) {
+        return backend.get(BASE + "/status/" + status, authHeader, Object.class)
+                .cast(Object.class)
+                .onErrorResume(e -> Mono.just((Object) error("Erro ao buscar encontros por status", e)));
     }
 
-    public Mono<Object> adicionarParticipante(String id, String userId, String auth) {
-        return backend.post("/api/Encontros/" + id + "/participantes/" + userId, auth, null, Object.class);
+    // ============================================================
+    // ADICIONAR PARTICIPANTE
+    // ============================================================
+    public Mono<Object> adicionarParticipante(String encontroId, String usuarioId, String authHeader) {
+        return backend.post(
+                BASE + "/" + encontroId + "/participantes/" + usuarioId,
+                authHeader,
+                null,
+                Object.class
+        )
+                .cast(Object.class)
+                .onErrorResume(e -> Mono.just((Object) error("Erro ao adicionar participante", e)));
     }
 
-    public Mono<Object> removerParticipante(String id, String userId, String auth) {
-        return backend.delete("/api/Encontros/" + id + "/participantes/" + userId, auth)
-                .thenReturn("Participante removido");
+    // ============================================================
+    // REMOVER PARTICIPANTE
+    // ============================================================
+    public Mono<Object> removerParticipante(String encontroId, String usuarioId, String authHeader) {
+        return backend.delete(
+                BASE + "/" + encontroId + "/participantes/" + usuarioId,
+                authHeader
+        )
+                .then(Mono.just((Object) ok("Participante removido com sucesso")))
+                .onErrorResume(e -> Mono.just((Object) error("Erro ao remover participante", e)));
+    }
+
+    // ============================================================
+    // HELPERS
+    // ============================================================
+    private Map<String, Object> ok(String msg) {
+        return Map.of("success", true, "message", msg);
+    }
+
+    private Map<String, Object> error(String msg, Throwable e) {
+        return Map.of(
+                "success", false,
+                "error", msg,
+                "details", e != null ? e.getMessage() : ""
+        );
     }
 }
