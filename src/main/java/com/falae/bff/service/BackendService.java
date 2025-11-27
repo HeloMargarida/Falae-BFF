@@ -1,92 +1,185 @@
 package com.falae.bff.service;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Service;
-import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
-import org.springframework.web.reactive.function.client.WebClientResponseException;
 
+import io.netty.handler.ssl.SslContextBuilder;
+import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import reactor.core.publisher.Mono;
+import reactor.netty.http.client.HttpClient;
 
 @Service
 public class BackendService {
 
-    private final WebClient client;
+    private final WebClient webClient;
 
-    @Autowired
-    public BackendService(@Qualifier("backendWebClient") WebClient backendWebClient) {
-        this.client = backendWebClient;
+    // Ajuste no application.properties:
+    // backend.base-url=https://localhost:7089   (recomendado, já que o .NET redireciona p/ HTTPS)
+    // ou, se quiser ficar em HTTP, desative UseHttpsRedirection no backend e use http://localhost:5245
+    @Value("${backend.base-url:http://localhost:5000}")
+    private String backendBaseUrl;
+
+    public BackendService(WebClient.Builder builder) {
+        // HttpClient com followRedirect + SSL "inseguro" apenas para DEV (cert de localhost)
+        HttpClient httpClient = HttpClient.create()
+            .followRedirect(true)
+            .secure(ssl -> ssl.sslContext(
+                SslContextBuilder.forClient()
+                    // ⚠️ DEV APENAS: aceita qualquer certificado (útil para https://localhost)
+                    .trustManager(InsecureTrustManagerFactory.INSTANCE)
+            ));
+
+        this.webClient = builder
+            .clientConnector(new ReactorClientHttpConnector(httpClient))
+            .defaultHeader(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
+            .defaultHeaders(h -> h.setAcceptCharset(java.util.List.of(StandardCharsets.UTF_8)))
+            .build();
     }
 
-    public <T> Mono<T> get(String path, String authHeader, Class<T> clazz) {
-        return client.get()
-                .uri(path)
-                .header(HttpHeaders.AUTHORIZATION, authHeader == null ? "" : authHeader)
-                .retrieve()
-                .bodyToMono(clazz)
-                .onErrorResume(WebClientResponseException.class,
-                        ex -> Mono.error(new RuntimeException(ex.getResponseBodyAsString(), ex)));
+    /* =========================================================
+       Helpers
+    ========================================================= */
+
+    private WebClient.RequestHeadersSpec<?> withAuth(WebClient.RequestHeadersSpec<?> spec, String auth) {
+        if (auth != null && !auth.isBlank()) {
+            String header = auth.startsWith("Bearer ") ? auth : "Bearer " + auth;
+            spec.header(HttpHeaders.AUTHORIZATION, header);
+        }
+        // reforça Accept por requisição (opcional)
+        spec.header(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE);
+        return spec;
     }
 
-    public <T> Mono<T> post(String path, String authHeader, Object body, Class<T> clazz) {
-        return client.post()
-                .uri(path)
-                .header(HttpHeaders.AUTHORIZATION, authHeader == null ? "" : authHeader)
+    private <T> Mono<T> handle(WebClient.ResponseSpec resp, Class<T> clazz) {
+        return resp
+            .onStatus(HttpStatusCode::isError, r -> r.createException().flatMap(Mono::error))
+            .bodyToMono(clazz);
+    }
+
+    private Mono<Void> handleVoid(WebClient.ResponseSpec resp) {
+        return resp
+            .onStatus(HttpStatusCode::isError, r -> r.createException().flatMap(Mono::error))
+            .bodyToMono(Void.class)
+            .then();
+    }
+
+    /* =========================================================
+       GET
+    ========================================================= */
+
+    public <T> Mono<T> get(String path, String auth, Class<T> clazz) {
+        var resp = withAuth(
+            webClient.get().uri(backendBaseUrl + path),
+            auth
+        ).retrieve();
+        return handle(resp, clazz);
+    }
+
+    public Mono<String> get(String path, String auth) {
+        var resp = withAuth(
+            webClient.get().uri(backendBaseUrl + path),
+            auth
+        ).retrieve();
+        return handle(resp, String.class);
+    }
+
+    /* =========================================================
+       POST
+    ========================================================= */
+
+    public <B, T> Mono<T> post(String path, String auth, B body, Class<T> clazz) {
+        var resp = withAuth(
+            webClient.post().uri(backendBaseUrl + path)
                 .contentType(MediaType.APPLICATION_JSON)
-                .body(BodyInserters.fromValue(body))
-                .retrieve()
-                .bodyToMono(clazz)
-                .onErrorResume(WebClientResponseException.class,
-                        ex -> Mono.error(new RuntimeException(ex.getResponseBodyAsString(), ex)));
+                .bodyValue(body == null ? Map.of() : body),
+            auth
+        ).retrieve();
+        return handle(resp, clazz);
     }
 
-    public Mono<Void> put(String path, String authHeader, Object body) {
-        return client.put()
-                .uri(path)
-                .header(HttpHeaders.AUTHORIZATION, authHeader == null ? "" : authHeader)
+    public <B> Mono<String> post(String path, String auth, B body) {
+        var resp = withAuth(
+            webClient.post().uri(backendBaseUrl + path)
                 .contentType(MediaType.APPLICATION_JSON)
-                .body(BodyInserters.fromValue(body))
-                .retrieve()
-                .bodyToMono(Void.class)
-                .onErrorResume(WebClientResponseException.class,
-                        ex -> Mono.error(new RuntimeException(ex.getResponseBodyAsString(), ex)));
+                .bodyValue(body == null ? Map.of() : body),
+            auth
+        ).retrieve();
+        return handle(resp, String.class);
     }
 
-    public Mono<Void> patch(String path, String authHeader, Object body) {
-        return client.patch()
-                .uri(path)
-                .header(HttpHeaders.AUTHORIZATION, authHeader == null ? "" : authHeader)
+    /* =========================================================
+       PUT
+    ========================================================= */
+
+    public <B> Mono<Void> put(String path, String auth, B body) {
+        var resp = withAuth(
+            webClient.put().uri(backendBaseUrl + path)
                 .contentType(MediaType.APPLICATION_JSON)
-                .body(BodyInserters.fromValue(body))
-                .retrieve()
-                .bodyToMono(Void.class)
-                .onErrorResume(WebClientResponseException.class,
-                        ex -> Mono.error(new RuntimeException(ex.getResponseBodyAsString(), ex)));
+                .bodyValue(body == null ? Map.of() : body),
+            auth
+        ).retrieve();
+        return handleVoid(resp);
     }
 
-    public Mono<Void> delete(String path, String authHeader) {
-        return client.delete()
-                .uri(path)
-                .header(HttpHeaders.AUTHORIZATION, authHeader == null ? "" : authHeader)
-                .retrieve()
-                .bodyToMono(Void.class)
-                .onErrorResume(WebClientResponseException.class,
-                        ex -> Mono.error(new RuntimeException(ex.getResponseBodyAsString(), ex)));
+    public <B, T> Mono<T> put(String path, String auth, B body, Class<T> clazz) {
+        var resp = withAuth(
+            webClient.put().uri(backendBaseUrl + path)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(body == null ? Map.of() : body),
+            auth
+        ).retrieve();
+        return handle(resp, clazz);
     }
 
-    public Mono<Map<String, Object>> getAsMap(String path, String authHeader) {
-        return client.get()
-                .uri(path)
-                .header(HttpHeaders.AUTHORIZATION, authHeader == null ? "" : authHeader)
-                .retrieve()
-                .bodyToMono(new ParameterizedTypeReference<Map<String, Object>>() {})
-                .onErrorResume(WebClientResponseException.class,
-                        ex -> Mono.error(new RuntimeException(ex.getResponseBodyAsString(), ex)));
+    /* =========================================================
+       PATCH
+    ========================================================= */
+
+    public <B> Mono<Void> patch(String path, String auth, B body) {
+        var resp = withAuth(
+            webClient.patch().uri(backendBaseUrl + path)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(body == null ? Map.of() : body),
+            auth
+        ).retrieve();
+        return handleVoid(resp);
+    }
+
+    public <B, T> Mono<T> patch(String path, String auth, B body, Class<T> clazz) {
+        var resp = withAuth(
+            webClient.patch().uri(backendBaseUrl + path)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(body == null ? Map.of() : body),
+            auth
+        ).retrieve();
+        return handle(resp, clazz);
+    }
+
+    /* =========================================================
+       DELETE
+    ========================================================= */
+
+    public Mono<Void> delete(String path, String auth) {
+        var resp = withAuth(
+            webClient.delete().uri(backendBaseUrl + path),
+            auth
+        ).retrieve();
+        return handleVoid(resp);
+    }
+
+    public <T> Mono<T> delete(String path, String auth, Class<T> clazz) {
+        var resp = withAuth(
+            webClient.delete().uri(backendBaseUrl + path),
+            auth
+        ).retrieve();
+        return handle(resp, clazz);
     }
 }

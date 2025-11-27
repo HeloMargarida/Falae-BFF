@@ -19,5 +19,4 @@ com\falae\bff\dto\LocalEncontroDtos.class
 com\falae\bff\dto\LocalEncontroDtos$LocalEncontroInput.class
 com\falae\bff\controller\LocaisEncontroBffController.class
 com\falae\bff\dto\AuthDtos$LoginRequest.class
-com\falae\bff\service\BackendService$1.class
 com\falae\bff\util\TokenUtil.class
